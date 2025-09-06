@@ -1,72 +1,3 @@
-<#
-.SYNOPSIS
-    Generates comprehensive Windows 365 Cloud PC license and usage reports using Microsoft Graph API.
-
-.DESCRIPTION
-    This script connects to Microsoft Graph API to retrieve detailed information about Windows 365 Cloud PCs,
-    service plans, provisioning policies, license groups, and user activity. It generates both raw and enriched
-    reports that help administrators manage Windows 365 licensing and identify inactive Cloud PCs.
-
-    The script performs the following operations:
-    - Authenticates with Microsoft Graph API using application credentials
-    - Retrieves Windows 365 service plans and provisioning policies
-    - Collects license group information and Cloud PC details
-    - Generates aggregated remote connection reports with enhanced data
-    - Identifies inactive Cloud PCs based on configurable criteria (default: 60 days)
-    - Exports data to both JSON and CSV formats for analysis
-
-    Key Features:
-    - Filters out production (PRD) Cloud PCs from license checks
-    - Identifies never-signed-in Cloud PCs older than specified days
-    - Tracks last active time for signed-in Cloud PCs
-    - Enriches data with service plan details, provisioning policies, and user information
-    - Handles Graph API pagination for large datasets
-    - Converts tenant-specific UPNs to contact email addresses
-
-.PARAMETER TenantId
-    The Azure Active Directory tenant ID where Windows 365 Cloud PCs are deployed.
-
-.PARAMETER ClientId
-    The application (client) ID of the Azure AD app registration with required Graph API permissions.
-
-.PARAMETER ClientSecret
-    The client secret for the Azure AD app registration used for authentication.
-
-.PARAMETER FileOutputPath
-    The directory path where output files will be saved. Defaults to "C:\Temp".
-
-.EXAMPLE
-    .\GraphAPI_W365LicenseReport.ps1 -TenantId "12345678-1234-1234-1234-123456789012" -ClientId "87654321-4321-4321-4321-210987654321" -ClientSecret "your-client-secret"
-    
-    Generates Windows 365 reports using the specified tenant and application credentials, saving files to the default C:\Temp directory.
-
-.EXAMPLE
-    .\GraphAPI_W365LicenseReport.ps1 -TenantId $tenantId -ClientId $clientId -ClientSecret $clientSecret -FileOutputPath "D:\Reports"
-    
-    Generates reports and saves output files to the specified D:\Reports directory.
-
-.NOTES
-    File Name      : GraphAPI_W365LicenseReport.ps1
-    Author         : Esther Barthel, MSc
-    Version        : 1.0
-    Prerequisite   : Azure AD app registration with Microsoft Graph permissions:
-                     - CloudPC.Read.All
-                     - Group.Read.All
-                     - User.Read.All
-                     - DeviceManagementManagedDevices.Read.All
-                     - Reports.Read.All
-    
-    Output Files:
-    - Windows365RawAggregatedRemoteConnections_[date].json/.csv
-    - Windows365EnrichedAggregatedRemoteConnections_[date].json/.csv
-    - W365FilteredCloudPCNames_[date].json
-    - W365CloudPCsInactiveLast60Days_[date].json/.csv
-
-.LINK
-    https://docs.microsoft.com/en-us/graph/api/resources/cloudpc
-    https://docs.microsoft.com/en-us/windows-365/
-#>
-
 [cmdletbinding()]
 param (
     [Parameter(Mandatory = $true)]
@@ -81,12 +12,18 @@ param (
     [Parameter(Mandatory = $false)]
     [string]$FileOutputPath = "C:\Temp"
 )
+####################################
+# Script Variables                 #
+####################################
+#region Script Variables
+$fileSuffix = Get-Date -Format "yyyyMMdd"
+$csvDelimiter = ";"
+#endregion
 
 ####################################
 # Script Functions                 #
 ####################################
 #region W365 license management functions
-
 # Graph Authentication functions
 function Get-GraphAccessToken {
     [cmdletbinding()]
@@ -144,7 +81,7 @@ function Get-W365ServicePlans {
         [string]$AccessToken
     )
 
-    #region Create URI for Graph call to collect all available service plans for Windows365
+    # Create URI for Graph call to collect all available service plans for Windows365
     $uri = "https://graph.microsoft.com/beta/deviceManagement/virtualEndpoint/servicePlans"
     $uri += "?`$filter=supportedSolution eq 'windows365' &`$count=true"
 
@@ -286,7 +223,7 @@ function Get-W365ProvisioningPolicies {
         [array]$ServicePlanSearchtable
     )
 
-    #region Create URI for Graph call to collect all provisioning policies for Windows365
+    # Create URI for Graph call to collect all provisioning policies for Windows365
     $uri = "https://graph.microsoft.com/beta/deviceManagement/virtualEndpoint/provisioningPolicies"
     $uri += "?`$expand=assignments &`$count=true"
 
@@ -388,6 +325,7 @@ function Get-W365CloudPCs {
     # Return the array of all CloudPCs
     return $allCloudPCs
 }
+
 # Intune Report functions
 function Get-W365AggregatedRemoteConnectionReport {
     [cmdletbinding()]
@@ -475,7 +413,7 @@ function Get-W365AggregatedRemoteConnectionReportWithEnrichedData {
         [array]$ProvisioningPolicySearchtable
     )
 
-    #region Create URI for Graph call to collect the Total Aggregated Remote Connection Reports
+    # Create URI for Graph call to collect the Total Aggregated Remote Connection Reports
     $uri = "https://graph.microsoft.com/beta/deviceManagement/virtualEndpoint/reports/getTotalAggregatedRemoteConnectionReports/"
     $uri += "?`$count=true"
 
@@ -592,7 +530,6 @@ function Get-W365AggregatedRemoteConnectionReportWithEnrichedData {
         # Update the request body for the next page
         $bodyObject["skip"] = $skip
     } while ($skip -lt $totalRowCount)
-    #endregion
 
     # Return the array of all Aggregated Remote Connections
     return $allAggregatedRemoteConnections
@@ -608,7 +545,7 @@ function Get-W365UserId {
         [string]$userPrincipalName
     )
 
-    #region Create URI for Graph call to collect all available service plans for Windows365
+    # Create URI for Graph call to collect all available service plans for Windows365
     $uri = "https://graph.microsoft.com/v1.0/users/$userPrincipalName"
     $uri += "?`$select=userPrincipalName,id,displayName"
 
@@ -642,11 +579,17 @@ function Get-W365UserId {
 ###################################
 # Script workflow                 #
 ###################################
+#----------------------------------
+# Graph Authentication            #
+#----------------------------------
 # Get the access token
 $graphContext = Get-GraphAccessToken -TenantId $tenantId -AppId $ClientId -AppSecret $ClientSecret
 # Output the access token
 Write-Output "Access Token: $($graphContext.access_token)"
 
+#----------------------------------
+# Build Search Tables             #
+#----------------------------------
 # Build the Searchtables
 $w365ServicePlanSearchtable = Get-W365ServicePlans -AccessToken $($graphContext.access_token)
 $w365ProvisioningPolicyGroupSearchtable = Get-W365ProvisioningPolicyGroups -AccessToken $($graphContext.access_token) `
@@ -669,11 +612,12 @@ Write-Output "Windows365 Provisioning Policies SearchTable: $($w365ProvisioningP
 # Output the number of CloudPCs in the search table
 Write-Output "Windows365 CloudPCs SearchTable: $($w365CloudPCs.Count)"
 
-#---------------------------------------------------------------------------#
-# Retrieve Intune Total Aggregated Remote Connection Report for Windows365  #
-#---------------------------------------------------------------------------#
-# Get Intune report data for Total Aggregated Remote Connections
+#----------------------------------------------------------------------------#
+# Retrieve Intune Total Aggregated Remote Connection Reports for Windows365  #
+#----------------------------------------------------------------------------#
+# Get raw data Intune report data for Total Aggregated Remote Connections
 $rawAggregatedRemoteConnections = Get-W365AggregatedRemoteConnectionReport -AccessToken $($graphContext.access_token)
+# Get enriched Intune report data for Total Aggregated Remote Connections
 $enrichedAggregatedRemoteConnections = Get-W365AggregatedRemoteConnectionReportWithEnrichedData -AccessToken $($graphContext.access_token) `
     -ServicePlanSearchtable $w365ServicePlanSearchtable -LicenseGroupSearchtable $w365LicenseGroupsSearchTable `
     -CloudPcSearchtable $w365CloudPCs -ProvisioningPolicySearchtable $w365ProvisioningPoliciesSearchTable
@@ -682,44 +626,38 @@ $enrichedAggregatedRemoteConnections = Get-W365AggregatedRemoteConnectionReportW
 Write-Output "Retrieved Total Aggregated Remote Connection Report: $($rawAggregatedRemoteConnections.Count)"
 Write-Output "Retrieved Enriched Total Aggregated Remote Connection Report: $($enrichedAggregatedRemoteConnections.Count)"
 
-# Export Array of Hashtables to JSON file and CSV
-$fileName = "$($FileOutputPath)\Windows365RawAggregatedRemoteConnections_$($fileSuffix)"
+# Export raw data to JSON file and CSV
+$fileName = "$($FileOutputPath)\W365RawAggregatedRemoteConnections_$($fileSuffix)"
 ConvertTo-Json -InputObject $rawAggregatedRemoteConnections -Depth 100 | Out-File -FilePath "$($fileName).json" -Force
 #Avoid 'Export-Csv: Object reference not set to an instance of an object' error with direct export by loading and converting JSON data and than export to CSV
 $jsonRawData = Get-Content -Path "$($fileName).json" -Raw | ConvertFrom-Json
-$jsonRawData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation
+$jsonRawData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation -Delimiter $csvDelimiter -Force
 
-# Export Array of Hashtables to JSON file and CSV
-$fileName = "$($FileOutputPath)\Windows365EnrichedAggregatedRemoteConnections_$($fileSuffix)"
+# Export enriched data to JSON file and CSV
+$fileName = "$($FileOutputPath)\W365EnrichedAggregatedRemoteConnections_$($fileSuffix)"
 ConvertTo-Json -InputObject $enrichedAggregatedRemoteConnections -Depth 100 | Out-File -FilePath "$($fileName).json" -Force
-# Avoid 'Export-Csv: Object reference not set to an instance of an object' error with direct export by loading and converting JSON data and than export to CSV
 $jsonEnrichedData = Get-Content -Path "$($fileName).json" -Raw | ConvertFrom-Json
-$jsonEnrichedData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation
+$jsonEnrichedData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation -Delimiter $csvDelimiter -Force
 
 #------------------------------------------------------------------------#
 # FILTERING Enriched Aggregated Remote Connection Report for Windows365  #
 #------------------------------------------------------------------------#
-
 Write-Output "-----------"
 [int]$daysToAdd = -59
 $checkDate = (Get-Date).AddDays($daysToAdd)
 $dateFormatString = "MM/dd/yyyy hh:mm:ss tt"
-$fileSuffix = Get-Date -Format "yyyyMMdd"
 Write-Output "checkDate: $(Get-Date -Date $checkDate -Format $dateFormatString)"
-Write-Output "-----------"
-#rule 01: No license check for PRD Cloud PCs
+#rule 01: No license check for PRD Cloud PCs [Exclude PRD CloudPCs as they will never expire (for now)]
 $filteredJsonData = $jsonEnrichedData
-# Exclude PRD CloudPCs as they will never expire (for now)
 $filteredJsonData = $filteredJsonData.Where({ ($_.provisioningPolicyName -notlike 'PRD*') })
 # Export filtered json data to JSON file (for logging)
 $fileName = "$($FileOutputPath)\W365FilteredCloudPCNames_$($fileSuffix)"
 ConvertTo-Json -InputObject $filteredJsonData -Depth 100 | Out-File -FilePath "$($fileName).json" -Force
-Write-Output "-----------"
 Write-Output "Filtered Total Aggregated Remote Connections (NO PRD): $($filteredJsonData.Count)"
-Write-Output "-----------"
-#rule 02: For never logged on provisioned CPCs (NeverLoggedIn = true) check CreateDate; if older than $checkDate, email user that license is revoked
-#rule 03: For logged on provisioned CPCs (NeverLoggedIn = false) check LastLoggedInDate; if older than $checkDate, email user that license is revoked
-# Filter CloudPCs with (NeverLoggedIn eq $true and CreatedDate lt $checkDate) or (NeverLoggedIn eq $false and LastActiveTime le $checkDate)
+#rule 02: Check for CloudPCs that have not been active for 60 days
+#         - For never logged on provisioned CPCs (NeverLoggedIn = true) check CreateDate; if older than $checkDate, email user that license is revoked
+#         - For logged on provisioned CPCs (NeverLoggedIn = false) check LastLoggedInDate; if older than $checkDate, email user that license is revoked
+#         [Filter CloudPCs with (NeverLoggedIn eq $true and CreatedDate lt $checkDate) or (NeverLoggedIn eq $false and LastActiveTime le $checkDate)]
 $totalFilteredJsonData = $filteredJsonData.Where({ (($_.NeverSignedIn -eq $true) -and ($_.CreatedDate -lt $checkDate) -and ($_.provisioningStatus -eq 'provisioned')) `
             -or (($_.NeverSignedIn -eq $false) -and ($_.LastActiveTime -le $checkDate) -and ($_.provisioningStatus -eq 'provisioned')) })
 Write-Output "totalFilteredInactiveW365VMs ($([Math]::Abs($daysToAdd)) days ($checkDate)): $($totalFilteredJsonData.Count)"
@@ -734,10 +672,8 @@ $enrichedTotalFilteredJsonData | ForEach-Object {
     $_ | Add-Member -MemberType NoteProperty -Name "UserDirectoryObjectId" -Value $userId -Force
 }
 
-# Export Array of Hashtables to JSON file
+# Export filtered data to JSON file
 $fileName = "$($FileOutputPath)\W365CloudPCsInactiveLast60Days_$($fileSuffix)"
 ConvertTo-Json -InputObject $enrichedTotalFilteredJsonData -Depth 100 | Out-File -FilePath "$($fileName).json" -Force
-#Avoid 'Export-Csv: Object reference not set to an instance of an object' error with direct export by loading and converting JSON data and than export to CSV
 $finalJsonData = Get-Content -Path "$($fileName).json" -Raw | ConvertFrom-Json
-# Final data of CloudPCs that have been inactive for 60 days filtered json data to CSV
-$finalJsonData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation -Force
+$finalJsonData | Export-Csv -Path "$($fileName).csv" -NoTypeInformation -Force -Delimiter $csvDelimiter -Force
