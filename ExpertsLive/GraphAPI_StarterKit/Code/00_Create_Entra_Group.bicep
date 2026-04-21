@@ -6,18 +6,23 @@ targetScope = 'resourceGroup'
 param entraUsersObjectId array = []
 
 // add the Graph provider for Bicep
-extension microsoftGraph
+extension microsoftGraphV1
 
 // create an Entra Group with a single member (using the Graph provider)
 resource entraGroup 'Microsoft.Graph/groups@v1.0' = {
-  displayName: 'grp-sec-bicepDemo'
+  uniqueName: 'GraphAPI_StarterKit_Group'
+  displayName: 'GraphAPI_StarterKit_Group'
   mailEnabled: false
-  mailNickname: 'grp-sec-bicepDemo'
+  mailNickname: 'GraphAPI_StarterKit_Group'
   securityEnabled: true
-  uniqueName: 'grp-sec-bicepDemo'
-  members: entraUsersObjectId
+  description: 'This group was created using Bicep and the Microsoft Graph API'
+  groupTypes: []
+  visibility: 'Private'
+  members: {
+    relationships: [for userId in entraUsersObjectId: 'https://graph.microsoft.com/v1.0/directoryObjects/${userId}']
+    relationshipSemantics: 'append'
+  }
 }
 
-
-
-
+// output the group ID
+output entraGroupId string = entraGroup.id
